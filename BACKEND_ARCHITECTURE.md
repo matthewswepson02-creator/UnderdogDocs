@@ -1,35 +1,51 @@
 # Backend Architecture
 
-## Purpose
+## Repository
 
-The Underdog backend is responsible for:
-
-* Athlete data management
-* Intake processing
-* Deterministic evaluation
-* Evaluation persistence
-* Future specialist-agent orchestration
-
-The backend is built on:
-
-* FastAPI
-* Supabase
-* Deterministic evaluation services
+```text
+UnderdogMethod-Backend-main/
+├── main.py
+├── requirements.txt
+├── api/
+├── schemas/
+├── services/
+├── core/
+└── prompts/
+```
 
 ---
 
-# Repository Structure
+# Purpose
 
-```text
-backend/
-├── api/
-├── core/
-├── prompts/
-├── schemas/
-├── services/
-├── main.py
-└── requirements.txt
-```
+The backend is responsible for:
+
+* Authentication-aware API handling
+* Athlete onboarding
+* Profile management
+* Intake submission processing
+* AI-assisted intake structuring
+* Deterministic metric scoring
+* EvaluationObject construction
+* Evaluation persistence
+* Admin review workflows
+
+The backend must preserve clean service separation.
+
+---
+
+# Application Entry Point
+
+## main.py
+
+Responsibilities:
+
+* FastAPI app initialization
+* CORS configuration
+* Router registration
+* `GET /health`
+* `GET /`
+
+`main.py` should not contain scoring logic, database logic, or evaluation construction logic.
 
 ---
 
@@ -38,164 +54,149 @@ backend/
 Location:
 
 ```text
-backend/api/
+api/
 ```
 
-## Purpose
+Purpose:
 
-API routes should:
+HTTP routes only.
 
-* Receive requests
-* Validate requests
-* Call services
-* Return responses
+API files should:
 
-API routes should NOT:
+* validate requests
+* resolve authenticated users
+* call services
+* return responses
 
-* Perform scoring
-* Perform database operations
-* Contain business logic
+API files should not:
+
+* score athletes
+* contain database logic
+* contain AI prompts
+* build deterministic evaluation logic
 
 ---
 
-## admin.py
+## api/deps.py
 
 Purpose:
 
-Administrative functionality.
+Bearer authentication dependency.
 
-Examples:
+Responsibilities:
 
-* athlete lookup
-* intake review
-* future moderation tools
+* read bearer token
+* resolve Supabase user ID
+* provide authenticated user context to routes
 
 ---
 
-## check_in.py
+## api/intake.py
+
+Endpoints:
+
+* `POST /intake`
+* `POST /approve-profile/{submission_id}`
 
 Purpose:
 
-Handle athlete check-ins.
+Handles raw intake submissions and profile approval workflow.
+
+Responsibilities:
+
+* receive intake payloads
+* delegate AI structuring to `claude_service.py`
+* store reviewable intake/profile data through `supabase_service.py`
+* support profile approval from inbox/review flow
+
+---
+
+## api/check_in.py
+
+Endpoint:
+
+* `POST /check-in`
+
+Purpose:
+
+Authenticated athlete check-in route.
 
 Responsibilities:
 
 * receive check-in payload
-* validate payload
-* delegate to services
+* store check-in submission
+* insert mapped metrics
+* trigger deterministic evaluation flow
 
 ---
 
-## deps.py
+## api/onboard.py
+
+Endpoint:
+
+* `POST /onboard`
 
 Purpose:
 
-Shared FastAPI dependencies.
-
-Examples:
-
-* authentication
-* user resolution
-* request context
-
----
-
-## intake.py
-
-Purpose:
-
-Handle intake submissions.
+Athlete onboarding route.
 
 Responsibilities:
 
-* receive intake payload
-* trigger Intake Agent
-* store submission
-* route review workflow
+* receive onboarding payload
+* validate onboarding data
+* delegate onboarding logic to services
 
 ---
 
-## onboard.py
+## api/profile.py
+
+Endpoints:
+
+* `/profile/me`
+* `/profile/finalize`
+* admin profile lookup by `athlete_id`
 
 Purpose:
 
-Athlete onboarding workflows.
+Athlete profile retrieval, update, and finalize workflows.
 
 ---
 
-## profile.py
+## api/scoring.py
+
+Endpoints:
+
+* `/score/*`
+* `/athlete-context/*`
 
 Purpose:
 
-Athlete profile retrieval and updates.
-
----
-
-## scoring.py
-
-Purpose:
-
-Evaluation endpoints.
-
-Examples:
-
-* GET /score/me
-* GET /score/{athlete_id}
-
----
-
-# Core Layer
-
-Location:
-
-```text
-backend/core/
-```
-
----
-
-## config.py
-
-Purpose:
-
-Application configuration.
-
-Examples:
-
-* Supabase configuration
-* environment variables
-* API settings
-* runtime configuration
-
----
-
-# Prompt Layer
-
-Location:
-
-```text
-backend/prompts/
-```
-
----
-
-## intake_agent.py
-
-Purpose:
-
-Prompt templates used by the Intake Agent.
+Evaluation and athlete-context access routes.
 
 Responsibilities:
 
-* normalization instructions
-* extraction instructions
-* review metadata instructions
+* retrieve current/latest score
+* retrieve athlete evaluation context
+* delegate evaluation logic to `evaluation_service.py`
 
-Rule:
+---
 
-Prompts contain instructions only.
+## api/admin.py
 
-Prompts do not execute business logic.
+Endpoints:
+
+* `/admin/athletes`
+* `/admin/intake-inbox`
+
+Purpose:
+
+Admin visibility and review workflows.
+
+Responsibilities:
+
+* list athletes
+* retrieve intake inbox records
+* support internal review dashboards
 
 ---
 
@@ -204,44 +205,55 @@ Prompts do not execute business logic.
 Location:
 
 ```text
-backend/schemas/
+schemas/
 ```
 
 Purpose:
 
-System contracts and validation.
+Pydantic request and response models.
 
-Schemas define:
-
-* request payloads
-* response payloads
-* service contracts
-* database transfer objects
+Schemas define contracts between API routes, services, and persisted outputs.
 
 ---
 
-## intake.py
+## schemas/intake.py
 
-Contains:
+Purpose:
 
-* intake request models
-* intake response models
-
----
-
-## onboard.py
-
-Contains:
-
-* onboarding models
+Intake request and response models.
 
 ---
 
-## profile.py
+## schemas/onboard.py
+
+Purpose:
+
+Onboarding request and response models.
+
+---
+
+## schemas/profile.py
+
+Purpose:
+
+Athlete profile request and response models.
+
+---
+
+## schemas/evaluation.py
+
+Purpose:
+
+Evaluation output models.
 
 Contains:
 
-* athlete profile models
+* `EvaluationObject`
+* `EvaluationSummary`
+* scored metric models
+* confidence/readiness-related structures
+
+`EvaluationObject` is the canonical deterministic evaluation output.
 
 ---
 
@@ -250,257 +262,419 @@ Contains:
 Location:
 
 ```text
-backend/services/
+services/
 ```
 
-This is the most important layer in the backend.
+Purpose:
+
+Backend business logic and integrations.
 
 ---
 
-## Service Separation Rules
+# Mandatory Service Separation
 
-These rules are mandatory.
-
----
-
-### supabase_service.py
+## services/scoring_service.py
 
 Type:
 
-Database layer
+Pure deterministic math layer.
 
 Responsibilities:
 
-* get athlete
-* get metrics
-* get threshold rules
-* insert check-in
-* insert evaluation
+* `score_metric()`
+* `score_athlete_metrics()`
+* `calculate_average_score()`
+* threshold comparison
+* score normalization
+* scoring helper logic
+
+Allowed:
+
+* deterministic calculations
+* metric/rule comparison
+* pure function behavior
+
+Not allowed:
+
+* Supabase access
+* HTTP calls
+* AI calls
+* route handling
+* evaluation persistence
+* request/response construction
+
+---
+
+## services/evaluation_service.py
+
+Type:
+
+Evaluation orchestration and deterministic interpretation layer.
+
+Responsibilities:
+
+* collect athlete metrics
+* collect threshold rules
+* call `scoring_service.py`
+* build scored metrics
+* build evaluation summary
+* build confidence assessment
+* construct `EvaluationObject`
+* coordinate evaluation persistence
 * retrieve evaluation history
 
 Allowed:
 
-* database access
-* Supabase queries
+* orchestration
+* deterministic interpretation
+* EvaluationObject construction
 
-Not Allowed:
+Not allowed:
 
-* scoring
-* confidence logic
-* readiness logic
-* business decisions
+* raw Supabase implementation details
+* API route handling
+* AI model calls
+* low-level scoring math that belongs in `scoring_service.py`
 
 ---
 
-### scoring_service.py
+## services/supabase_service.py
 
 Type:
 
-Deterministic scoring engine
+Database access layer.
+
+Implementation:
+
+* `httpx` to Supabase REST
 
 Responsibilities:
 
-* score_metric()
-* score_athlete_metrics()
-* calculate_average_score()
-* band assignment
+* athlete reads/writes
+* profile reads/writes
+* metric reads/writes
+* threshold rule retrieval
+* intake submission insertion
+* profile inbox access
+* check-in metric insertion
+* evaluation run insertion
+* latest evaluation retrieval
+* evaluation history retrieval
+
+Allowed:
+
+* database queries
+* database inserts
+* database updates
+* database response normalization
+
+Not allowed:
+
 * scoring calculations
-
-Allowed:
-
-* deterministic math
-* threshold evaluation
-
-Not Allowed:
-
-* database access
-* AI calls
-* orchestration
-* API logic
+* readiness decisions
+* confidence assessment
+* summary generation
+* AI logic
 
 ---
 
-### evaluation_service.py
+## services/claude_service.py
 
 Type:
 
-Evaluation orchestration layer
-
-Responsibilities:
-
-* retrieve athlete context
-* retrieve metrics
-* retrieve threshold rules
-* call scoring_service
-* build EvaluationObject
-* build evaluation summary
-* build confidence assessment
-* persist evaluation results
-
-Allowed:
-
-* orchestration
-* interpretation
-* evaluation assembly
-
-Not Allowed:
-
-* raw database implementation
-* route handling
-* AI scoring
-
----
-
-### claude_service.py
-
-Type:
-
-AI integration layer
-
-Responsibilities:
-
-* Claude API calls
-* structured AI outputs
-* Intake Agent execution
-
-Important:
-
-AI may structure data.
-
-AI may not assign deterministic scores.
-
----
-
-### onboard.py
-
-Type:
-
-Onboarding business logic
-
-Responsibilities:
-
-* onboarding workflows
-* onboarding transformations
-
----
-
-# Application Entry Point
-
-## main.py
+AI integration layer.
 
 Purpose:
 
-FastAPI application startup.
+Runs the Intake Agent.
 
 Responsibilities:
 
-* route registration
-* middleware registration
-* app configuration
+* call Claude
+* extract structured profile data
+* normalize messy intake input
+* return reviewable structured output
+
+Allowed:
+
+* AI-assisted intake interpretation
+* profile extraction
+* missing field detection
+* data quality flagging
+
+Not allowed:
+
+* assigning deterministic scores
+* assigning readiness
+* calculating evaluation results
+* writing directly to production scoring outputs
 
 ---
 
-# Current Evaluation Flow
+## services/onboard.py
 
-Current implementation:
+Type:
 
-Athlete Check-In
+Onboarding validation and review logic.
 
-↓
+Responsibilities:
 
-intake_submissions
+* onboarding validation
+* onboarding review flags
+* onboarding transformations
 
-↓
+Restriction:
 
-metrics
-
-↓
-
-threshold_rules
-
-↓
-
-scoring_service.py
-
-↓
-
-evaluation_service.py
-
-↓
-
-EvaluationObject
-
-↓
-
-evaluation_runs.evaluation
+No direct database access.
 
 ---
 
-# Current Phase
+# Core Layer
+
+Location:
+
+```text
+core/
+```
+
+---
+
+## core/config.py
+
+Purpose:
+
+Environment and runtime configuration.
+
+Contains:
+
+* `SUPABASE_*`
+* `ANTHROPIC_*`
+* `CLAUDE_MODEL`
+
+---
+
+## core/metric_registry.py
+
+Purpose:
+
+Canonical metric definitions for scoring.
+
+Responsibilities:
+
+* define supported metrics
+* standardize metric names
+* support scoring consistency
+* prevent metric naming drift
+
+The metric registry is part of the deterministic evaluation foundation.
+
+---
+
+# Prompt Layer
+
+Location:
+
+```text
+prompts/
+```
+
+---
+
+## prompts/intake_agent.py
+
+Purpose:
+
+System prompt for the Intake Agent.
+
+Responsibilities:
+
+* guide intake extraction
+* guide metric normalization
+* guide missing field detection
+* guide review metadata generation
+
+Prompts should not contain executable business logic.
+
+---
+
+# Current Evaluation Pipeline
+
+```text
+Authenticated Athlete
+→ POST /check-in
+→ intake_submissions
+→ metrics
+→ evaluation_service.py
+→ scoring_service.py
+→ EvaluationObject
+→ evaluation_runs.evaluation JSONB
+→ GET /score/me
+→ Dashboard
+```
+
+---
+
+# Current Intake Pipeline
+
+```text
+Athlete Submission
+→ POST /intake
+→ claude_service.py
+→ Intake Agent structured output
+→ profile/intake inbox
+→ admin review
+→ POST /approve-profile/{submission_id}
+→ athlete profile update
+```
+
+---
+
+# Current Database Concepts
+
+* `athletes`
+* `metrics`
+* `threshold_rules`
+* `evaluation_runs`
+* `evaluation_runs.evaluation` JSONB
+* `intake_submissions`
+* `profile_inbox`
+
+---
+
+# Phase 1 Status
 
 Phase 1 — Intake + Evaluation Layer
 
 Completed:
 
-* Intake Agent
-* Metric Registry
-* Threshold Rules
-* EvaluationObject
-* Confidence Scoring MVP
-* Evaluation Orchestration
-* Evaluation History Retrieval
-* Evaluation Persistence
+* Authentication dependency
+* Profile management
+* Onboarding route
+* Intake submission flow
+* AI intake structuring
+* Admin intake inbox
+* Profile approval workflow
+* Check-in route
+* Metric insertion from check-in
+* Metric registry
+* Threshold rules
+* Deterministic scoring functions
+* EvaluationObject schema
+* Evaluation summary construction
+* Confidence scoring MVP
+* Automatic evaluation orchestration
+* Evaluation history retrieval
+* Evaluation JSONB persistence
+* Latest score retrieval
+
+Current focus:
+
+* Deterministic scoring tests
+
+Next planned:
+
+* Dashboard historical trends
+* Evaluation history visualization
 
 ---
 
 # Locked Architecture Decisions
 
-## ADR-001
+## ADR-001 — Deterministic Scoring
 
-Deterministic scoring remains backend code.
+Deterministic scoring remains backend code only.
 
 AI does not assign scores.
 
 ---
 
-## ADR-002
+## ADR-002 — Service Separation
 
-Service separation is mandatory.
+Service boundaries are mandatory.
 
-* scoring_service.py = math only
-* evaluation_service.py = orchestration
-* supabase_service.py = database access
-
----
-
-## ADR-003
-
-EvaluationObject is the source of truth.
+* `scoring_service.py` = math only
+* `evaluation_service.py` = orchestration + deterministic interpretation
+* `supabase_service.py` = database only
+* API routes = request/response only
 
 ---
 
-## ADR-004
+## ADR-003 — EvaluationObject Source of Truth
 
-evaluation_runs.evaluation stores the complete evaluation output.
-
----
-
-## ADR-005
-
-Raw intake payloads must always be stored.
+`EvaluationObject` is the canonical evaluation output shape.
 
 ---
 
-# Future Services
+## ADR-004 — JSONB Evaluation Persistence
 
-These are planned but not yet implemented.
+`evaluation_runs.evaluation` stores the complete evaluation output.
 
-* research_service.py
-* nutrition_service.py
-* weightlifting_service.py
-* athletic_trainer_service.py
-* technique_service.py
-* similarity_service.py
-* head_coach_service.py
+Reason:
 
-Do not implement these unless explicitly requested.
+This preserves the full deterministic evaluation result for history, dashboard trends, and future coaching interpretation.
+
+---
+
+## ADR-005 — Raw Intake Preservation
+
+Raw intake payloads must always be stored before interpretation.
+
+---
+
+## ADR-006 — Confidence Location
+
+Confidence scoring belongs in `evaluation_service.py`.
+
+Reason:
+
+Confidence is deterministic interpretation of evaluation completeness, not scoring math.
+
+---
+
+## ADR-007 — Metric Registry
+
+Metric naming must flow through `core/metric_registry.py`.
+
+Reason:
+
+Prevents scoring drift caused by inconsistent metric names.
+
+---
+
+# Explicitly Out of Scope
+
+Do not add these unless specifically requested:
+
+* ATS
+* archetypes
+* similarity engine
+* research agent
+* program builder
+* plan safety agent
+* nutritionist agent
+* weightlifting coach agent
+* athletic trainer agent
+* technique agent
+* head coach agent
+
+---
+
+# Testing Priorities
+
+Current testing focus:
+
+* `score_metric()`
+* `score_athlete_metrics()`
+* `calculate_average_score()`
+* `build_evaluation_summary()`
+* `build_confidence_assessment()`
+* `EvaluationObject` output shape
+
+Testing rules:
+
+* Use pytest
+* Do not hit real Supabase
+* Do not require real auth
+* Do not call Claude
+* Mock database access in evaluation service tests
+* Use fixtures for metrics, rules, athletes, and evaluation outputs
